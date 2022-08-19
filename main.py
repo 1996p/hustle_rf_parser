@@ -1,12 +1,12 @@
-
-import requests
+import asyncio
+import aiohttp
 import json
 from time import time
 
 URL = 'https://xn--80awro.xn--p1ai/krossovki?start={position}&tmpl=component'
 HEADERS = {
     'Accept': '*/*',
-    'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:103.0) Gecko/20100101 Firefox/103.0'
+    'User-Agent': ''
 }
 
 SHOP_URL = 'https://хасл.рф/'
@@ -14,22 +14,26 @@ SHOP_URL = 'https://хасл.рф/'
 all_trainers_data = {'trainers': []}
 
 
-def get_content(url: str) -> dict:
-    response = requests.get(url=url, headers=HEADERS).json()['rows']
-    print(f'Going to url {url}...')
-    return response
+async def get_content(url: str, session: aiohttp.ClientSession) -> None:
+    """Отвечает за отправку GET-запроса на страницу с данными"""
+    async with session.get(url=url, headers=HEADERS) as response:
+        json_data = await response.json(content_type='text/html')
+        parse_json(json_data['rows'])
 
 
 def parse_json(data: dict) -> None:
+    """Отвечает за парсинг данных формата json, складывает все в общий словарь с данными"""
     for iterator in range(0, 40):
 
         current_trainers_json = data[iterator]
-
-        attrs = current_trainers_json['attributes'][0]['list']
         able_sizes = []
+        try:
+            attrs = current_trainers_json['attributes'][0]['list']
+            for attr in attrs:
+                able_sizes.append(attr['name'])
 
-        for attr in attrs:
-            able_sizes.append(attr['name'])
+        except Exception:
+            pass
 
         trainers_info = {
             'name': current_trainers_json['name'],
@@ -45,19 +49,21 @@ def parse_json(data: dict) -> None:
 
 
 def write_file(raw_trainers_data: dict) -> None:
+    """Преобразует данные в объект json, а так же записывает их в .json файл"""
     with open('хасл_рф_кроссовки.json', 'w') as file:
         json.dump(raw_trainers_data, file, indent=4, ensure_ascii=False)
 
 
-def main() -> None:
-    for i in range(0, 4080, 40):
-        data = get_content(URL.format(position=i))
-        parse_json(data)
+async def main() -> None:
+    """Формирует таски"""
+    async with aiohttp.ClientSession() as session:
+        tasks = [asyncio.create_task(get_content(URL.format(position=i), session)) for i in range(0, 4000, 40)]
+        await asyncio.gather(*tasks)
 
     write_file(all_trainers_data)
 
 
 if __name__ == '__main__':
     t0 = time()
-    main()
+    asyncio.run(main())
     print(f'{time() - t0} seconds has passed')
